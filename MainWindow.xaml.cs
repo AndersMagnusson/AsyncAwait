@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -115,20 +116,25 @@ namespace AsyncAwait
             {
                 try
                 {
-                    string temp = GetSrc(src);
-                    var pageContent = await client.DownloadDataTaskAsync(temp);
-                    string filePath = Path.Combine(folderPath, "Async", Path.GetFileName(temp));
+                    string imageSrc = GetSrc(src);
+                    string filePath = Path.Combine(folderPath, "Async", Path.GetFileName(imageSrc));
+
+                    var pageContent = await client.DownloadDataTaskAsync(imageSrc);
                     await SaveFileAsync(pageContent, filePath);
+                    
                     DisplayImage(filePath);
                     images.Add(filePath);
                 }
-                catch { }
+                catch (Exception) { }
             }
             return images;
         }
 
         private async Task<bool> SaveFileAsync(byte[] file, string filePath)
         {
+            if (File.Exists(filePath))
+                return false;
+
             using (FileStream fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite))
             {
                 await fs.WriteAsync(file, 0, file.Length);
@@ -138,7 +144,7 @@ namespace AsyncAwait
         }
 
         #endregion
-
+        
         #region Old Async pattern
 
         private void OldAsyncButton_Click(object sender, RoutedEventArgs e)
@@ -171,20 +177,25 @@ namespace AsyncAwait
 
         void client_DownloadDataCompleted(object sender, DownloadDataCompletedEventArgs e)
         {
-            string filePath = Path.Combine(folderPath, "OldAsync", e.UserState.ToString());
-            SaveFile(e.Result, filePath);
-
-            Images.Add(new DownloadedFile() { Name = e.UserState.ToString(), ImageUri = filePath });
-            if (ImagesToDownload == Images.Count())
+            try
             {
-                IsButtonsEnabled = true;
-                //Dispatcher.Invoke(() => IsButtonsEnabled = true);
+                string filePath = Path.Combine(folderPath, "OldAsync", e.UserState.ToString());
+                SaveFile(e.Result, filePath);
+
+                Images.Add(new DownloadedFile() { Name = e.UserState.ToString(), ImageUri = filePath });
+                if (ImagesToDownload == Images.Count())
+                {
+                    IsButtonsEnabled = true;
+                    //Dispatcher.Invoke(() => IsButtonsEnabled = true);
+                }
             }
+            catch (ArgumentException) { }
         }
 
         #endregion
 
         #region Synchronous
+
         private void SyncButton_Click(object sender, RoutedEventArgs e)
         {
             SetUp();
@@ -219,13 +230,16 @@ namespace AsyncAwait
                     DisplayImage(filePath);
                     images.Add(filePath);
                 }
-                catch { }
+                catch(Exception) { }
             }
             return images;
         }
 
         private void SaveFile(byte[] file, string filePath)
-        {   
+        {
+            if (File.Exists(filePath))
+                return;
+
             using (FileStream fs = new FileStream(filePath, FileMode.Create, FileAccess.Write))
             {
                 fs.Write(file, 0, file.Length);
@@ -234,6 +248,7 @@ namespace AsyncAwait
         #endregion
 
         #region Find Images
+
         private static List<string> FindImages(string pageContent)
         {
             HtmlDocument doc = new HtmlDocument();
@@ -244,7 +259,7 @@ namespace AsyncAwait
                 var src = node.Attributes.FirstOrDefault(a => a.Name.ToLower() == "src");
                 if (src != null && !string.IsNullOrEmpty(src.Value))
                 {
-                    listOfImageSources.Add(src.Value);
+                    listOfImageSources.Add(src.Value.ToLower());
                 }
             }
             return listOfImageSources.Distinct().ToList();
@@ -253,7 +268,7 @@ namespace AsyncAwait
         private string GetSrc(string src)
         {
             string temp = src;
-            if (!src.ToLower().StartsWith("http"))
+            if (!src.ToLower().StartsWith("http") || !src.ToLower().StartsWith("https"))
             {
                 temp = string.Concat(wwwAddressTextBox.Text, "/", src);
             }
@@ -261,7 +276,6 @@ namespace AsyncAwait
         }
         #endregion
 
-    
         #region Notifications
         public event PropertyChangedEventHandler PropertyChanged;
         protected void OnPropertyChanged(string name)
